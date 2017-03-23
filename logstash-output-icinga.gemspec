@@ -4,8 +4,8 @@ Gem::Specification.new do |s|
   s.licenses      = ['Apache License (2.0)']
   s.summary       = 'A Logstash output that calls the Icinga API'
   s.homepage      = 'https://github.com/icinga/logstash-output-icinga'
-  s.authors       = ['']
-  s.email         = ''
+  s.authors       = ['Icinga Development Team']
+  s.email         = 'info@icinga.com'
   s.require_paths = ['lib']
 
   # Files
