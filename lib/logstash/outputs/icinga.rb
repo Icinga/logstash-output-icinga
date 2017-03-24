@@ -1,7 +1,7 @@
 # encoding: utf-8
 require 'logstash/outputs/base'
 require 'logstash/namespace'
-require 'json'
+require 'logstash/json'
 require 'net/http'
 require 'uri'
 
@@ -37,7 +37,7 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
   # * remove-comment
   # * schedule-downtime
   # * remove-downtime
-  config :action, :validate => :string, :required => true
+  config :action, :validate => ["process-check-result", "send-custom-notification", "acknowledge-problem", "acknowledge-problem", "add-comment", "remove-comment", "schedule-downtime", "remove-downtime"], :required => true
 
   # Set the configuration depending on the action.
   # Each action has different configuration parameters.
@@ -51,36 +51,36 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
 
   public
   def register
-    @url = 'https://' + @host + '/v1/actions'
+    @url = "https://#{@host}/v1/actions/#{@action}"
     @uri = URI.parse(@url)
 
-    @client = Net::HTTP.new(@host, @port)
-    @client.use_ssl = true
+    @http = Net::HTTP.new(@host, @port)
+    @http.use_ssl = true
     @ssl_verify ? ssl_verify_mode = OpenSSL::SSL::VERIFY_PEER : ssl_verify_mode = OpenSSL::SSL::VERIFY_NONE
-    @client.verify_mode = ssl_verify_mode
+    @http.verify_mode = ssl_verify_mode
   end # def register
 
   public
   def receive(event)
-    $stdout.write('Host: ' + @host + ' User: ' + @user + ' Password: ' + @password.to_s)
+    icinga_host = event.sprintf(@icinga_host)
+    icinga_service = event.sprintf(@icinga_service)
 
-    response = @client.request(create_request(@action, @action_config, @icinga_host, @icinga_service))
-    @logger.debug('Response', response.body)
-  end # def event
-
-  public
-  def create_request(action, action_config, icinga_host, icinga_service)
     params = { :service => "#{icinga_host}!#{icinga_service}" }
     @uri.query = URI.encode_www_form(params)
-    @uri.path = @uri.path + '/' + action
+
+    request_body = Hash.new()
+    @action_config.each do |key, value|
+      request_body[key] = event.sprintf(value)
+    end
 
     request = Net::HTTP::Post.new(@uri.request_uri)
     request.initialize_http_header({'Accept' => 'application/json'})
     request.basic_auth(@user, @password.value)
-    request.body = action_config.to_json
+    request.body = LogStash::Json.dump(request_body)
+    @logger.debug("Request path: #{request.path}")
+    @logger.debug("Request body: #{request.body}")
 
-    $stdout.write("\n action config: " + action_config.to_json + "\n\n\n")
-
-    request
-  end # def create_request
+    response = @http.request(request)
+    @logger.debug("Response: #{response.body}")
+  end # def event
 end # class LogStash::Outputs::Icinga
