@@ -90,10 +90,10 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
 
   public
   def register
-    @url = "https://#{@host}/v1/actions/#{@action}"
+    @url = "https://#{@host}:#{@port}/v1/actions/#{@action}"
     @uri = URI.parse(@url)
 
-    @http = Net::HTTP.new(@host, @port)
+    @http = Net::HTTP.new(@uri.host, @uri.port)
     @http.use_ssl = true
     @ssl_verify ? ssl_verify_mode = OpenSSL::SSL::VERIFY_PEER : ssl_verify_mode = OpenSSL::SSL::VERIFY_NONE
     @http.verify_mode = ssl_verify_mode
@@ -110,33 +110,53 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
     params = { :service => "#{icinga_host}!#{icinga_service}" }
     @uri.query = URI.encode_www_form(params)
 
+    # TODO: Use Json.load instead
     request_body = Hash.new
     @action_config.each do |key, value|
       request_body[key] = event.sprintf(value)
     end # each action_config
 
     request = Net::HTTP::Post.new(@uri.request_uri)
-    request.initialize_http_header({'Accept' => 'application/json'})
-    request.basic_auth(@user, @password.value)
-    request.body = LogStash::Json.dump(request_body)
-    @logger.debug("Request path: #{request.path}")
-    @logger.debug("Request body: #{request.body}")
 
-    # TODO: capture failures in response
-    response = @http.request(request)
-    @logger.debug("Response: #{response.body}")
+    begin
+      request.initialize_http_header({'Accept' => 'application/json'})
+      request.basic_auth(@user, @password.value)
+      request.body = LogStash::Json.dump(request_body)
+      response = @http.request(request)
+
+      raise StandardError, response.body if response.code != '200'
+
+      response_body = LogStash::Json.load(response.body)
+      response_body['results'].each do |result|
+        logging_data = {
+            :request_path => request.path,
+            :request_body => request.body,
+            :result_code => result['code'].to_i,
+            :result_status => result['status']
+        }
+
+        if result['code'] == 200
+          @logger.debug("Action '#{@action}' succeeded", logging_data)
+        else
+          @logger.warn("Action '#{@action}' failed", logging_data)
+        end
+      end
+    rescue StandardError => e
+      @logger.error("Request failed: Request Path: #{request.path} Request Body: #{request.body} Error: #{e}")
+    end
   end # def event
 
+  private
   def validate_action_config
     ACTION_CONFIG_FIELDS[@action].each do |field, settings|
       if settings['required'] && !@action_config.key?(field)
-        logger.error("Field '#{field}' is required for action '#{@action}'")
+        logger.error("Setting '#{field}' is required for action '#{@action}'")
       end
     end
 
     @action_config.each_key do |field|
       if !ACTION_CONFIG_FIELDS[@action].key?(field)
-        logger.warn("Field '#{field}' is not available for action '#{action}'")
+        logger.warn("Unknown setting '#{field}' for action '#{action}'")
       end
     end
   end # def validate_action_config
