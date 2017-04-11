@@ -6,6 +6,7 @@ actions.
 ## Installation
 
 ```shell
+wget https://github.com/Icinga/logstash-output-icinga/releases/download/v0.1.0/logstash-output-icinga-0.1.0.gem
 /usr/share/logstash/bin/logstash-plugin install logstash-output-icinga-0.1.0.gem
 ```
 
