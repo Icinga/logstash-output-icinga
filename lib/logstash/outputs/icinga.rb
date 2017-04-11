@@ -105,12 +105,16 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
   def receive(event)
     icinga_host = event.sprintf(@icinga_host)
     icinga_service = event.sprintf(@icinga_service)
+    @logger.debug("action config: #{@action_config}")
 
-    # TODO: check if service is set, otherwise use ?host= parameter
-    params = { :service => "#{icinga_host}!#{icinga_service}" }
+    if @icinga_service
+      params = { :service => "#{icinga_host}!#{icinga_service}" }
+    else
+      params = { :host => "#{icinga_host}" }
+    end
+
     @uri.query = URI.encode_www_form(params)
 
-    # TODO: Use Json.load instead
     request_body = Hash.new
     @action_config.each do |key, value|
       request_body[key] = event.sprintf(value)
