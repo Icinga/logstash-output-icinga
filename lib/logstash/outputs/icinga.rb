@@ -31,13 +31,11 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
   # Multiple actions are available:
   # * process-check-result
   # * send-custom-notification
-  # * acknowledge-problem
-  # * remove-acknowledgement
   # * add-comment
   # * remove-comment
   # * schedule-downtime
   # * remove-downtime
-  config :action, :validate => ['process-check-result', 'send-custom-notification', 'acknowledge-problem', 'acknowledge-problem', 'add-comment', 'remove-comment', 'schedule-downtime', 'remove-downtime'], :required => true
+  config :action, :validate => ['process-check-result', 'send-custom-notification', 'add-comment', 'remove-comment', 'schedule-downtime', 'remove-downtime'], :required => true
 
   # Set the configuration depending on the action.
   # Each action has different configuration parameters.
@@ -62,30 +60,26 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
           'comment' => { 'required' => true },
           'force' => {}
       },
-      'acknowledge-problem' => {
-          'author' => { 'required' => true },
-          'comment' => { 'required' => true },
-          'expiry' => {},
-          'sticky' => {},
-          'notify' => {}
-      },
-      'remove-acknowledgement' => {},
       'add-comment' => {
           'author' => { 'required' => true },
           'comment' => { 'required' => true }
       },
-      'remove-comment' => {},
+      'remove-comment' => {
+          'author' => { 'required' => true }
+      },
       'schedule-downtime' => {
-          'author' => {},
-          'comment' => {},
-          'start_time' => {},
-          'end_time' => {},
+          'author' => { 'required' => true },
+          'comment' => { 'required' => true},
+          'start_time' => { 'required' => true},
+          'end_time' => { 'required' => true },
           'duration' => {},
           'fixed' => {},
           'trigger_name' => {},
           'child_options' => {}
       },
-      'remove-downtime' => {}
+      'remove-downtime' => {
+          'author' => { 'required' => true }
+      }
   }
 
   public
@@ -103,23 +97,29 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
 
   public
   def receive(event)
+    uri_params = Hash.new
+    request_body = Hash.new
     icinga_host = event.sprintf(@icinga_host)
     icinga_service = event.sprintf(@icinga_service)
-    @logger.debug("action config: #{@action_config}")
 
-    if @icinga_service
-      params = { :service => "#{icinga_host}!#{icinga_service}" }
-    else
-      params = { :host => "#{icinga_host}" }
+    case @action
+      when 'remove-downtime', 'remove-comment'
+        action_type = @action.split('-').last
+        request_body['type'] = action_type.capitalize
+        if @icinga_service
+          request_body['filter'] = "host.name == \"#{icinga_host}\" && service.name == \"#{icinga_service}\" && #{action_type}.author == \"#{@action_config['author']}\""
+        else
+          request_body['filter'] = "host.name == \"#{icinga_host}\" && #{action_type}.author == \"#{@action_config['author']}\""
+        end
+      else
+        @icinga_service ? uri_params[:service] = "#{icinga_host}!#{icinga_service}" : uri_params[:host] = icinga_host
+
+        @action_config.each do |key, value|
+          request_body[key] = event.sprintf(value)
+        end
     end
 
-    @uri.query = URI.encode_www_form(params)
-
-    request_body = Hash.new
-    @action_config.each do |key, value|
-      request_body[key] = event.sprintf(value)
-    end # each action_config
-
+    @uri.query = URI.encode_www_form(uri_params)
     request = Net::HTTP::Post.new(@uri.request_uri)
 
     begin
@@ -127,7 +127,6 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
       request.basic_auth(@user, @password.value)
       request.body = LogStash::Json.dump(request_body)
       response = @http.request(request)
-
       raise StandardError, response.body if response.code != '200'
 
       response_body = LogStash::Json.load(response.body)
@@ -144,7 +143,10 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
         else
           @logger.warn("Action '#{@action}' failed", logging_data)
         end
+      end.empty? and begin
+        @logger.debug('Returned result was epty', :response_body => response.body)
       end
+
     rescue StandardError => e
       @logger.error("Request failed: Request Path: #{request.path} Request Body: #{request.body} Error: #{e}")
     end
