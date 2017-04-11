@@ -1,5 +1,37 @@
 # Icinga Logstash Plugin
 
-This is a plugin for [Logstash](https://github.com/elastic/logstash).
+This is a plugin for [Logstash](https://github.com/elastic/logstash). It calls the Icinga 2 API to perform various
+actions.
 
-It is fully free and fully open source. The license is Apache 2.0, meaning you are pretty much free to use it however you want in whatever way.
+## Installation
+
+```shell
+/usr/share/logstash/bin/logstash-plugin install logstash-output-icinga-0.1.0.gem
+```
+
+## Configuration
+This plugin supports the following parameters:
+
+| Parameter        | Type     | Default    | Required |
+|:-----------------|:---------|:-----------|:---------|
+| `host`           | string   | -          | Yes      |
+| `port`           | number   | `5665`     | No       |
+| `user`           | string   | -          | Yes      |
+| `password`       | passowrd | -          | Yes      |
+| `ssl_verify`     | boolean  | `true`     | No       |
+| `action`         | string   | -          | Yes      |
+| `action_config`  | hash     | -          | Yes      |
+| `icinga_host`    | string   | -          | Yes      |
+| `icinga_service` | string   | -          | Yes      |
+
+Following options are available for the `action` parameter:
+
+* `process-check-result`
+* `send-custom-notification`
+* `add-comment`
+* `remove-comment`
+* `schedule-downtime`
+* `remove-downtime`
+
+Each `action` has its own settings for `action_config`. Possible options are listed in the 
+[Icinga documentation](https://docs.icinga.com/icinga2/latest/doc/module/icinga2/chapter/icinga2-api#icinga2-api-actions).
