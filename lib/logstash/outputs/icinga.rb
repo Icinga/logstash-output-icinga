@@ -13,9 +13,9 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
   config_name 'icinga'
 
   # Icinga 2 API hostname or IP address
-  config :host, :validate => :string, :required => true
+  config :host, :validate => :array, :default => ["127.0.0.1"]
 
-  # Port number
+  # Global port configuration
   config :port, :validate => :number, :default => 5665
 
   # API user
@@ -84,54 +84,53 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
 
   public
   def register
-    @url = "https://#{@host}:#{@port}/v1/actions/#{@action}"
-    @uri = URI.parse(@url)
-
-    @http = Net::HTTP.new(@uri.host, @uri.port)
-    @http.use_ssl = true
-    @ssl_verify ? ssl_verify_mode = OpenSSL::SSL::VERIFY_PEER : ssl_verify_mode = OpenSSL::SSL::VERIFY_NONE
-    @http.verify_mode = ssl_verify_mode
-
     validate_action_config
+    @ssl_verify ? @ssl_verify_mode = OpenSSL::SSL::VERIFY_PEER : @ssl_verify_mode = OpenSSL::SSL::VERIFY_NONE
+    @host_id = 0
   end # def register
 
   public
   def receive(event)
-    uri_params = Hash.new
-    request_body = Hash.new
-    icinga_host = event.sprintf(@icinga_host)
-    icinga_service = event.sprintf(@icinga_service)
 
-    case @action
-      when 'remove-downtime', 'remove-comment'
-        action_type = @action.split('-').last
-        request_body['type'] = action_type.capitalize
-        if @icinga_service
-          request_body['filter'] = "host.name == \"#{icinga_host}\" && service.name == \"#{icinga_service}\" && #{action_type}.author == \"#{@action_config['author']}\""
-        else
-          request_body['filter'] = "host.name == \"#{icinga_host}\" && #{action_type}.author == \"#{@action_config['author']}\""
-        end
-      else
-        @icinga_service ? uri_params[:service] = "#{icinga_host}!#{icinga_service}" : uri_params[:host] = icinga_host
-
-        @action_config.each do |key, value|
-          request_body[key] = event.sprintf(value)
-        end
-    end
-
-    @uri.query = URI.encode_www_form(uri_params)
-    request = Net::HTTP::Post.new(@uri.request_uri)
+    @tries = @host.count
 
     begin
+      @httpclient ||= connect
+      uri_params = Hash.new
+      request_body = Hash.new
+      icinga_host = event.sprintf(@icinga_host)
+      icinga_service = event.sprintf(@icinga_service)
+
+      case @action
+        when 'remove-downtime', 'remove-comment'
+          action_type = @action.split('-').last
+          request_body['type'] = action_type.capitalize
+          if @icinga_service
+            request_body['filter'] = "host.name == \"#{icinga_host}\" && service.name == \"#{icinga_service}\" && #{action_type}.author == \"#{@action_config['author']}\""
+          else
+            request_body['filter'] = "host.name == \"#{icinga_host}\" && #{action_type}.author == \"#{@action_config['author']}\""
+          end
+        else
+          @icinga_service ? uri_params[:service] = "#{icinga_host}!#{icinga_service}" : uri_params[:host] = icinga_host
+          @uri.query = URI.encode_www_form(uri_params)
+
+          @action_config.each do |key, value|
+            request_body[key] = event.sprintf(value)
+          end
+      end
+
+      request = Net::HTTP::Post.new(@uri.request_uri)
       request.initialize_http_header({'Accept' => 'application/json'})
       request.basic_auth(@user, @password.value)
       request.body = LogStash::Json.dump(request_body)
-      response = @http.request(request)
+
+      response = @httpclient.request(request)
       raise StandardError, response.body if response.code != '200'
 
       response_body = LogStash::Json.load(response.body)
       response_body['results'].each do |result|
         logging_data = {
+            :host => "#{@uri.host}:#{@uri.port}",
             :request_path => request.path,
             :request_body => request.body,
             :result_code => result['code'].to_i,
@@ -148,7 +147,13 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
       end
 
     rescue StandardError => e
-      @logger.error("Request failed: Request Path: #{request.path} Request Body: #{request.body} Error: #{e}")
+      @logger.error("Request failed: Host: #{@uri.host}:#{@uri.port} Path: #{request.path} Body: #{request.body} Error: #{e}")
+
+      if not (@tries -= 1).zero?
+        @httpclient = connect
+        @logger.info("Retrying request with '#{@uri.host}:#{@uri.port}'")
+        retry
+      end
     end
   end # def event
 
@@ -161,9 +166,26 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
     end
 
     @action_config.each_key do |field|
-      if !ACTION_CONFIG_FIELDS[@action].key?(field)
+      if not ACTION_CONFIG_FIELDS[@action].key?(field)
         logger.warn("Unknown setting '#{field}' for action '#{action}'")
       end
     end
   end # def validate_action_config
+
+  def connect
+    @current_host, @current_port = @host[@host_id].split(':')
+    @host_id = @host_id + 1 >= @host.length ? 0 : @host_id + 1
+
+    if not @current_port
+      @current_port = @port
+    end
+
+    @uri = URI.parse("https://#{@current_host}:#{@current_port}/v1/actions/#{@action}")
+
+    http = Net::HTTP.new(@uri.host, @uri.port)
+    http.use_ssl = true
+    http.verify_mode = @ssl_verify_mode
+
+    http
+  end # def http_connect
 end # class LogStash::Outputs::Icinga
