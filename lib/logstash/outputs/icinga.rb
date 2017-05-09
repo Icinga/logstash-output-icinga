@@ -92,7 +92,7 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
   public
   def receive(event)
 
-    @tries = @host.count
+    @available_hosts = @host.count
 
     begin
       @httpclient ||= connect
@@ -147,9 +147,9 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
       end
 
     rescue StandardError => e
-      @logger.error("Request failed: Host: #{@uri.host}:#{@uri.port} Path: #{request.path} Body: #{request.body} Error: #{e}")
+      @logger.error("Request failed", :host => @uri.host, :port => @uri.port, :path => request.path, :body => request.body, :error => e)
 
-      if not (@tries -= 1).zero?
+      if not (@available_hosts -= 1).zero?
         @httpclient = connect
         @logger.info("Retrying request with '#{@uri.host}:#{@uri.port}'")
         retry
@@ -161,13 +161,13 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
   def validate_action_config
     ACTION_CONFIG_FIELDS[@action].each do |field, settings|
       if settings['required'] && !@action_config.key?(field)
-        logger.error("Setting '#{field}' is required for action '#{@action}'")
+        @logger.error("Setting '#{field}' is required for action '#{@action}'")
       end
     end
 
     @action_config.each_key do |field|
       if not ACTION_CONFIG_FIELDS[@action].key?(field)
-        logger.warn("Unknown setting '#{field}' for action '#{action}'")
+        @logger.warn("Unknown setting '#{field}' for action '#{action}'")
       end
     end
   end # def validate_action_config
@@ -185,6 +185,8 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
     http = Net::HTTP.new(@uri.host, @uri.port)
     http.use_ssl = true
     http.verify_mode = @ssl_verify_mode
+    http.open_timeout = 2
+    http.read_timeout = 5
 
     http
   end # def http_connect
