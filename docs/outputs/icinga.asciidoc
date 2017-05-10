@@ -1,8 +1,8 @@
 [[plugins-outputs-icinga]]
 === icinga
 
-* Version: 0.1.0
-* Released on: May 9, 2017
+* Version: 1.0.0
+* Released on: May 10, 2017
 * https://github.com/Icinga/logstash-output-icinga/blob/master/CHANGELOG.md#010[Changelog]
 
 
