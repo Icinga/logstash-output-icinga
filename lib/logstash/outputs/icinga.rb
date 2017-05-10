@@ -5,46 +5,200 @@ require 'logstash/json'
 require 'net/http'
 require 'uri'
 
-# An icinga output that does nothing.
+#
+# This plugin runs actions on an Icinga server by calling its API. The Icinga API is available since version 2.4.
+# It replaces the formerly used command pipe by providing a similiar interface with filter capabilities. Actions are
+# used in order to process check results, manage downtimes, tell Icinga to send notifications and so on.
+#
+# This plugin handles a defined set of actions. A list of all Icinga actions is avaiable in the
+# https://docs.icinga.com/icinga2/latest/doc/module/icinga2/chapter/icinga2-api#icinga2-api-actions[Icinga Docs].
+#
+# Examples:
+#
+# . Process a check result based on syslog severity
+#
+# [source,ruby]
+#     filter {
+#       if [syslog_severity] == "error" {
+#         mutate {
+#           replace => { "exit_status" => "2" }
+#         }
+#       }
+#     }
+#     output {
+#       icinga {
+#         host           => 'demo.icinga.com'
+#         user           => 'icinga'
+#         password       => 'supersecret'
+#         action         => 'process-check-result'
+#         action_config  => {
+#           exit_status   => "%{exit_status}"
+#           plugin_output => "%{message}"
+#         }
+#         icinga_host    => "%{hostname}"
+#         icinga_service => "dummy"
+#       }
+#     }
+#
+# . Set a downtime of 2 hours, starting from now
+#
+# [source,ruby]
+#     filter {
+#       ruby { code => "event.set('start_time', Time.now.to_i)" }
+#       ruby { code => "event.set('end_time', Time.now.to_i + 7200)" }
+#     }
+#     output {
+#       icinga {
+#         host           => 'demo'
+#         user           => 'root'
+#         password       => 'icinga'
+#         ssl_verify     => false
+#         action         => 'schedule-downtime'
+#         action_config  => {
+#           author     => "logstash"
+#           comment    => "Downtime set by Logstash Output"
+#           start_time => "%{start_time}"
+#           end_time   => "%{end_time}"
+#         }
+#         icinga_host    => '%{hostname}'
+#         icinga_service => 'dummy'
+#       }
+#
 class LogStash::Outputs::Icinga < LogStash::Outputs::Base
 
   concurrency :single
 
   config_name 'icinga'
 
-  # Icinga 2 API hostname or IP address
+  # The hostname(s) of your Icinga server. If the hosts list is an array, Logstash will send the action to the first
+  # entry in the list. If it disconnects, the same request will be processed to the next host. An action is send to each
+  # host in the list, until one is accepts it. If all hosts are unavailable, the action is discarded. Ports can be
+  # specified on any hostname, which will override the global port config.
+  #
+  # For example:
+  # [source,ruby]
+  #     "127.0.0.1"
+  #     ["127.0.0.1", "127.0.0.2"]
+  #     ["127.0.0.1:5665", "127.0.0.2"]
   config :host, :validate => :array, :default => ["127.0.0.1"]
 
-  # Global port configuration
+  # Global port configuration. Can be overriten on any hostname.
   config :port, :validate => :number, :default => 5665
 
-  # API user
+  # The Icinga API user. This user must exist on your Icinga server. It is an object of the type 'ApiUser'. Make sure
+  # this user has sufficient permissions to run the actions you configure. Learn about it in the
+  # https://docs.icinga.com/icinga2/latest/doc/module/icinga2/chapter/object-types#objecttype-apiuser[Icinga documentation about ApiUser].
   config :user, :validate => :string, :required => true
 
-  # Password of API user
+  # Password of the Icinga API user
   config :password, :validate => :password, :required => true
 
-  # SSL verification
+  # Connecting to the Icinga API is only available through SSL encryption. Set this setting to `false` to disable SSL
+  # verification.
   config :ssl_verify, :validate => :boolean, :default => true
 
-  # This is the action the output should perform.
-  # Multiple actions are available:
-  # * process-check-result
-  # * send-custom-notification
-  # * add-comment
-  # * remove-comment
-  # * schedule-downtime
-  # * remove-downtime
+  # All actions must target an `icinga_host` or an `icinga_service`.
+  # [cols="<,<",]
+  # |=======================================================================
+  # |Action |Description
+  # | <<process-check-result,process-check-result>> |Process a check result.
+  # | <<send-custom-notification,send-custom-notification>> |Send a custom notification.
+  # | <<add-comment,add-comment>> |Add a comment from an author.
+  # | <<remove-comment,remove-comment>> |Remove all comments created by a certain author.
+  # | <<schedule-downtime,schedule-downtime>> |Schedule a downtime for a host or service.
+  # | <<remove-downtime,remove-downtime>> |Remove all downtimes created by a certain author.
+  # |=======================================================================
   config :action, :validate => ['process-check-result', 'send-custom-notification', 'add-comment', 'remove-comment', 'schedule-downtime', 'remove-downtime'], :required => true
 
-  # Set the configuration depending on the action.
-  # Each action has different configuration parameters.
+  # Each action has its own parameters. Values of settings inside of `action_config` may include existing fields.
+  #
+  # [source,ruby]
+  #     icinga {
+  #       [...]
+  #       action        => "add-comment"
+  #       action_config => {
+  #         author  => "%{somefield}_logstash"
+  #         comment => "%{message}"
+  #       }
+  #     }
+  #
+  # ====== `process-check-result`
+  # [cols="<,<,<",]
+  # |=======================================================================
+  # |Setting |Input type|Required
+  # | `exit_status` |<<number,number>>, For services: 0=OK, 1=WARNING, 2=CRITICAL, 3=UNKNOWN, for hosts: 0=OK, 1=CRITICAL.|Yes
+  # | `plugin_output` |<<string,string>>, The plugins main output. Does not contain the performance data.|Yes
+  # | `performance_data` |<<array,array>>, The performance data.|No
+  # | `check_command` |<<array,array>>, The first entry should be the check commands path, then one entry for each command line option followed by an entry for each of its argument.|No
+  # | `check_source` |<<string,string>>, Usually the name of the `command_endpoint`|No
+  # |=======================================================================
+  #
+  # ====== `send-custom-notification`
+  # [cols="<,<,<",]
+  # |=======================================================================
+  # |Setting |Input type|Required
+  # | `author` |<<string,string>>, Name of the author.|Yes
+  # | `comment` |<<string,string>>, Comment text.|Yes
+  # | `force` |<<boolean,boolean>>, Default: `false`. If `true`, the notification is sent regardless of downtimes or whether notifications are enabled or not.|No
+  # |=======================================================================
+  #
+  # ====== `add-comment`
+  # [cols="<,<,<",]
+  # |=======================================================================
+  # |Setting |Input type|Required
+  # | `author` |<<string,string>>, Name of the author.|Yes
+  # | `comment` |<<string,string>>, Comment text.|Yes
+  # |=======================================================================
+  #
+  # ====== `remove-comment`
+  # [cols="<,<,<",]
+  # |=======================================================================
+  # |Setting |Input type|Required
+  # | `author` |<<string,string>>, Name of the author.|Yes
+  # |=======================================================================
+  #
+  # ====== `schedule-downtime`
+  # [cols="<,<,<",]
+  # |=======================================================================
+  # |Setting |Input type|Required
+  # | `author` |<<string,string>>, Name of the author.|Yes
+  # | `comment` |<<string,string>>, Comment text.|Yes
+  # | `start_time` |<<timestamp (epoc),timestamp (epoc)>>, Timestamp marking the beginning of the downtime.|Yes
+  # | `end_time` |<<timestamp (epoc),timestamp (epoc)>>, Timestamp marking the end of the downtime.|Yes
+  # | `fixed` |<<boolean,boolean>>, Defaults to `true`. If `true`, the downtime is fixed otherwise flexible.|No
+  # | `duration` |<<number,number>>, Duration of the downtime in seconds if fixed is set to `false`.|Required for flexible downtimes
+  # | `trigger_name` |<<string,string>>, Sets the trigger for a triggered downtime.|No
+  # | `child_options` |<<number,number>>, Schedule child downtimes. `0` does not do anything, `1` schedules child downtimes triggered by this downtime, `2` schedules non-triggered downtimes. Defaults to `0`.|No
+  # |=======================================================================
+  #
+  # ====== `remove-downtime`
+  # [cols="<,<,<",]
+  # |=======================================================================
+  # |Setting |Input type|Required
+  # | `author` |<<string,string>>, Name of the author.|Yes
+  # |=======================================================================
+  #
+  # Detailed information about each action are listed in the
+  # https://docs.icinga.com/icinga2/latest/doc/module/icinga2/chapter/icinga2-api#icinga2-api-actions[Icinga Docs]
   config :action_config, :validate => :hash, :required => true
 
-  # The host the action applies to
+  # The Icinga `Host` object. This field may include existing fields.
+  #
+  # [source,ruby]
+  #     icinga {
+  #       [...]
+  #       icinga_host => "%{hostname}"
+  #     }
   config :icinga_host, :validate => :string, :required => true
 
-  # The service the action applies to.
+  # The Icinga `Service` object. This field may include existing fields.
+  #
+  # [source,ruby]
+  #     icinga {
+  #       [...]
+  #       icinga_host => "%{hostname}"
+  #       icinga_service => "%{program}"
+  #     }
   config :icinga_service, :validate => :string
 
   ACTION_CONFIG_FIELDS = {
@@ -101,6 +255,8 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
       icinga_host = event.sprintf(@icinga_host)
       icinga_service = event.sprintf(@icinga_service)
 
+      # Depending on the action we take, set either a filter in the request body or set a host and/or service in the
+      # url parameters.
       case @action
         when 'remove-downtime', 'remove-comment'
           action_type = @action.split('-').last
@@ -149,6 +305,8 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
     rescue StandardError => e
       @logger.error("Request failed", :host => @uri.host, :port => @uri.port, :path => request.path, :body => request.body, :error => e)
 
+      # If a host is not reachable, try the same request with the next host in the list. Only try each host once per
+      # request.
       if not (@available_hosts -= 1).zero?
         @httpclient = connect
         @logger.info("Retrying request with '#{@uri.host}:#{@uri.port}'")
