@@ -20,7 +20,8 @@ describe LogStash::Outputs::Icinga do
         'action' => action,
         'action_config' => action_config,
         'icinga_host' => icinga_host,
-        'icinga_service' => icinga_service
+        'icinga_service' => icinga_service,
+        'create_object' => true
     }
   }
   let(:event) { LogStash::Event.new({ 'message' => 'This is a dummy message.' }) }
@@ -64,9 +65,9 @@ describe LogStash::Outputs::Icinga do
           with(:body => request_body,
                :basic_auth => [user, password],
                :headers => {'Accept'=>'application/json'}).
-          to_raise(StandardError)
+          to_raise(Timeout::Error)
 
-      expect(logger).to receive(:error).with("Request failed", instance_of(Hash))
+      expect(logger).to receive(:warn).with("Request failed", instance_of(Hash))
 
       expect(logger).to receive(:info).with("Retrying request with '#{host[1]}:5665'")
 
@@ -89,9 +90,9 @@ describe LogStash::Outputs::Icinga do
           with(:body => request_body,
                :basic_auth => [user, password],
                :headers => {'Accept'=>'application/json'}).
-          to_raise(StandardError)
+          to_raise(Timeout::Error)
 
-      expect(logger).to receive(:error).with("Request failed", instance_of(Hash))
+      expect(logger).to receive(:warn).with("Request failed", instance_of(Hash))
 
       expect(logger).to receive(:info).with("Retrying request with '#{host[1]}:5665'")
 
@@ -99,9 +100,9 @@ describe LogStash::Outputs::Icinga do
           with(:body => request_body,
                :basic_auth => [user, password],
                :headers => {'Accept'=>'application/json'}).
-          to_raise(StandardError)
+          to_raise(Timeout::Error)
 
-      expect(logger).to receive(:error).with("Request failed", instance_of(Hash))
+      expect(logger).to receive(:warn).with("Request failed", instance_of(Hash))
 
       expect(logger).to receive(:info).with("Retrying request with '#{host[2]}:5665'")
 
@@ -109,9 +110,9 @@ describe LogStash::Outputs::Icinga do
           with(:body => request_body,
                :basic_auth => [user, password],
                :headers => {'Accept'=>'application/json'}).
-          to_raise(StandardError)
+          to_raise(Timeout::Error)
 
-      expect(logger).to receive(:error).with("Request failed", instance_of(Hash))
+      expect(logger).to receive(:warn).with("Request failed", instance_of(Hash))
 
 
       output.receive(event)
@@ -151,6 +152,33 @@ describe LogStash::Outputs::Icinga do
       logger = output.logger
       expect(logger).to receive(:warn).with("Unknown setting 'mysetting' for action '#{action}'")
       plugin.register
+    end
+  end
+
+  context 'with create_object => true' do
+    it 'should create object and retry action' do
+      stub_request(:post, request).
+          with(:body => request_body,
+               :basic_auth => [user, password],
+               :headers => {'Accept'=>'application/json'}).
+          to_return(body: 'Object not found', status: 404, :headers => {}).
+          to_raise(StandardError)
+
+      expect(logger).to receive(:warn).with("Request failed", instance_of(Hash))
+
+      stub_request(:put, "https://#{host[0]}/v1/objects/services/#{icinga_host}!#{icinga_service}").
+          with(:body => '{"templates":["logstash-service"],"attrs":{"vars.created_by":"logstash"}}',
+               :basic_auth => [user, password],
+               :headers => {'Accept'=>'application/json'}).
+          to_return(:status => 200, :body => '', :headers => {})
+
+      stub_request(:post, request).
+          with(:body => request_body,
+               :basic_auth => [user, password],
+               :headers => {'Accept'=>'application/json'}).
+          to_return(body: '', status: 200, :headers => {})
+
+      output.receive(event)
     end
   end
 end

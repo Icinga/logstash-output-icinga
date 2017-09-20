@@ -201,6 +201,46 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
   #     }
   config :icinga_service, :validate => :string
 
+  # If the host or service does not exist, it can be created automatically by settings this parameter to 'true'. A
+  # service can only be created if its host already exists. This limitation is necessary because we cannot decide
+  # automatically how to handle the host based on the desired action for the service. To bypass this behaviour, you
+  # can use the 'icinga' output multiple times in a row, where you first create the host and then the service.
+  config :create_object, :validate => :boolean, :default => false
+
+  # You should make sure to have a special template for hosts and services created by logstash. Defining a 'check_command'
+  # is mandatory when creating hosts or services. If your template does not handle this, you neet to set the 'check_command'
+  # in 'object_attrs'. You can set more then one templates in an array, the default is set to 'logstash-service'.
+  #
+  # Examples for an icinga host template:
+  #
+  # [source,c]
+  #  template Host "logstash-host" {
+  #    enable_passive_checks = 1
+  #    enable_active_checks = 0
+  #    check_command = "dummy"
+  #  }
+  #
+  # Example for an icinga service template:
+  #
+  # [source,c]
+  #  template Service "logstash-service" {
+  #    enable_passive_checks = 1
+  #    enable_active_checks = 0
+  #    check_command = "dummy"
+  #  }
+  config :object_templates, :validate => :array, :default => ['logstash-service']
+
+  # A hash of attributes for the object. The values can be existing fields.
+  # The default is set to "'vars.created_by' => 'logstash'"
+  #
+  # Example:
+  #
+  # [source,ruby]
+  #  object_attrs => {
+  #    'vars.os' => "%{operatingsystem}"
+  #  }
+  config :object_attrs, :validate => :hash, :default => {'vars.created_by' => 'logstash'}
+
   ACTION_CONFIG_FIELDS = {
       'process-check-result' => {
           'exit_status' => { 'required' => true },
@@ -250,7 +290,6 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
 
     begin
       @httpclient ||= connect
-      uri_params = Hash.new
       request_body = Hash.new
       icinga_host = event.sprintf(@icinga_host)
       icinga_service = event.sprintf(@icinga_service)
@@ -267,8 +306,11 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
             request_body['filter'] = "host.name == \"#{icinga_host}\" && #{action_type}.author == \"#{@action_config['author']}\""
           end
         else
-          @icinga_service ? uri_params[:service] = "#{icinga_host}!#{icinga_service}" : uri_params[:host] = icinga_host
-          @uri.query = URI.encode_www_form(uri_params)
+          if @icinga_service
+            @uri.query = "service=" + URI.encode("#{icinga_host}!#{icinga_service}")
+          else
+            @uri.query = "host=" + URI.encode(icinga_host)
+          end
 
           @action_config.each do |key, value|
             request_body[key] = event.sprintf(value)
@@ -281,7 +323,7 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
       request.body = LogStash::Json.dump(request_body)
 
       response = @httpclient.request(request)
-      raise StandardError, response.body if response.code != '200'
+      raise StandardError if response.code != '200'
 
       response_body = LogStash::Json.load(response.body)
       response_body['results'].each do |result|
@@ -302,16 +344,39 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
         @logger.debug('Returned result was epty', :response_body => response.body)
       end
 
-    rescue StandardError => e
-      @logger.error("Request failed", :host => @uri.host, :port => @uri.port, :path => request.path, :body => request.body, :error => e)
-
-      # If a host is not reachable, try the same request with the next host in the list. Only try each host once per
+    rescue Timeout::Error => e
+      @logger.warn( "Request failed",
+                    :host => @uri.host, :port => @uri.port,
+                    :path => request.path, :body => request.body,
+                    :error => e )
+      # If a host is not reachable, try the same request with the next host in the list. Try each host host only once per
       # request.
       if not (@available_hosts -= 1).zero?
         @httpclient = connect
         @logger.info("Retrying request with '#{@uri.host}:#{@uri.port}'")
         retry
       end
+
+    rescue StandardError => e
+      @logger.warn( "Request failed",
+                     :host => @uri.host, :port => @uri.port,
+                     :path => request.path, :body => request.body,
+                     :response_code => response.code, :response_body => response.body,
+                     :error => e )
+
+      # If a object does not exist, create it and retry action
+      if response.code == '404' and @create_object == true
+        object = create_object(event)
+
+        if object.code == '200'
+          @logger.info("Retrying action on freshly created object", :action => @action)
+          retry
+        else
+          @logger.warn("Failed to create object", :response_code => object.code, :response_body => object.body)
+          next
+        end
+      end
+
     end
   end # def event
 
@@ -345,7 +410,35 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
     http.verify_mode = @ssl_verify_mode
     http.open_timeout = 2
     http.read_timeout = 5
-
     http
   end # def http_connect
+
+  def create_object(event)
+    object_config = Hash.new
+    object_config['templates'] = @object_templates
+    object_config['attrs'] = Hash.new
+
+    @object_attrs.each do |key, value|
+      object_config['attrs'][key] = event.sprintf(value)
+    end
+
+    if icinga_service
+      request_uri = '/v1/objects/services/' + URI.encode("#{@icinga_host}!#{@icinga_service}")
+    else
+      request_uri = '/v1/objects/hosts/' + URI.encode(@icinga_host)
+    end
+
+    request = Net::HTTP::Put.new(request_uri)
+    request.initialize_http_header({'Accept' => 'application/json'})
+    request.basic_auth(@user, @password.value)
+    request.body = LogStash::Json.dump(object_config)
+
+    @logger.info( "Creating Object",
+                   :request_uri => request_uri,
+                   :request_body => request.body,
+                   :icinga_host => @icinga_host, :icinga_service => @icinga_service )
+
+    response = @httpclient.request(request)
+    response
+  end # def create_object
 end # class LogStash::Outputs::Icinga
