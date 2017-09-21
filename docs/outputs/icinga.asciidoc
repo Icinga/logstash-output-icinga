@@ -3,7 +3,7 @@
 
 * Version: 1.0.0
 * Released on: May 10, 2017
-* https://github.com/Icinga/logstash-output-icinga/blob/master/CHANGELOG.md#010[Changelog]
+* https://github.com/Icinga/logstash-output-icinga/blob/master/CHANGELOG.md#100[Changelog]
 
 
 ==== Installation
@@ -107,11 +107,14 @@ Available configuration options:
 | <<plugins-outputs-icinga-action>> |<<string,string>>, one of `["process-check-result", "send-custom-notification", "add-comment", "remove-comment", "schedule-downtime", "remove-downtime"]`|Yes
 | <<plugins-outputs-icinga-action_config>> |<<hash,hash>>|Yes
 | <<plugins-outputs-icinga-codec>> |<<codec,codec>>|No
+| <<plugins-outputs-icinga-create_object>> |<<boolean,boolean>>|No
 | <<plugins-outputs-icinga-enable_metric>> |<<boolean,boolean>>|No
 | <<plugins-outputs-icinga-host>> |<<array,array>>|No
 | <<plugins-outputs-icinga-icinga_host>> |<<string,string>>|Yes
 | <<plugins-outputs-icinga-icinga_service>> |<<string,string>>|No
 | <<plugins-outputs-icinga-id>> |<<string,string>>|No
+| <<plugins-outputs-icinga-object_attrs>> |<<hash,hash>>|No
+| <<plugins-outputs-icinga-object_templates>> |<<array,array>>|No
 | <<plugins-outputs-icinga-password>> |<<password,password>>|Yes
 | <<plugins-outputs-icinga-port>> |<<number,number>>|No
 | <<plugins-outputs-icinga-ssl_verify>> |<<boolean,boolean>>|No
@@ -229,6 +232,17 @@ https://docs.icinga.com/icinga2/latest/doc/module/icinga2/chapter/icinga2-api#ic
 
 The codec used for output data. Output codecs are a convenient method for encoding your data before it leaves the output, without needing a separate filter in your Logstash pipeline.
 
+[[plugins-outputs-icinga-create_object]]
+===== `create_object` 
+
+  * Value type is <<boolean,boolean>>
+  * Default value is `false`
+
+If the host or service does not exist, it can be created automatically by settings this parameter to 'true'. A
+service can only be created if its host already exists. This limitation is necessary because we cannot decide
+automatically how to handle the host based on the desired action for the service. To bypass this behaviour, you
+can use the 'icinga' output multiple times in a row, where you first create the host and then the service.
+
 [[plugins-outputs-icinga-enable_metric]]
 ===== `enable_metric` 
 
@@ -293,7 +307,7 @@ The Icinga `Service` object. This field may include existing fields.
   * There is no default value for this setting.
 
 Add a unique `ID` to the plugin configuration. If no ID is specified, Logstash will generate one. 
-It is strongly recommended to set this ID in your configuration. This is particulary useful 
+It is strongly recommended to set this ID in your configuration. This is particularly useful 
 when you have two or more plugins of the same type, for example, if you have 2 grok filters. 
 Adding a named ID in this case will help in monitoring Logstash when using the monitoring APIs.
 
@@ -306,6 +320,50 @@ output {
 }
 ---------------------------------------------------------------------------------------------------
 
+
+[[plugins-outputs-icinga-object_attrs]]
+===== `object_attrs` 
+
+  * Value type is <<hash,hash>>
+  * Default value is `{"vars.created_by"=>"logstash"}`
+
+A hash of attributes for the object. The values can be existing fields.
+The default is set to "'vars.created_by' => 'logstash'"
+
+Example:
+
+[source,ruby]
+ object_attrs => {
+   'vars.os' => "%{operatingsystem}"
+ }
+
+[[plugins-outputs-icinga-object_templates]]
+===== `object_templates` 
+
+  * Value type is <<array,array>>
+  * Default value is `["logstash-service"]`
+
+You should make sure to have a special template for hosts and services created by logstash. Defining a 'check_command'
+is mandatory when creating hosts or services. If your template does not handle this, you neet to set the 'check_command'
+in 'object_attrs'. You can set more then one templates in an array, the default is set to 'logstash-service'.
+
+Examples for an icinga host template:
+
+[source,c]
+ template Host "logstash-host" {
+   enable_passive_checks = 1
+   enable_active_checks = 0
+   check_command = "dummy"
+ }
+
+Example for an icinga service template:
+
+[source,c]
+ template Service "logstash-service" {
+   enable_passive_checks = 1
+   enable_active_checks = 0
+   check_command = "dummy"
+ }
 
 [[plugins-outputs-icinga-password]]
 ===== `password` 
