@@ -417,15 +417,17 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
     object_config = Hash.new
     object_config['templates'] = @object_templates
     object_config['attrs'] = Hash.new
+    icinga_host = event.sprintf(@icinga_host)
+    icinga_service = event.sprintf(@icinga_service)
 
     @object_attrs.each do |key, value|
       object_config['attrs'][key] = event.sprintf(value)
     end
 
-    if icinga_service
-      request_uri = '/v1/objects/services/' + URI.encode("#{@icinga_host}!#{@icinga_service}")
+    if @icinga_service
+      request_uri = '/v1/objects/services/' + URI.encode("#{icinga_host}!#{icinga_service}")
     else
-      request_uri = '/v1/objects/hosts/' + URI.encode(@icinga_host)
+      request_uri = '/v1/objects/hosts/' + URI.encode(icinga_host)
     end
 
     request = Net::HTTP::Put.new(request_uri)
@@ -436,7 +438,7 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
     @logger.info( "Creating Object",
                    :request_uri => request_uri,
                    :request_body => request.body,
-                   :icinga_host => @icinga_host, :icinga_service => @icinga_service )
+                   :icinga_host => icinga_host, :icinga_service => icinga_service )
 
     response = @httpclient.request(request)
     response
