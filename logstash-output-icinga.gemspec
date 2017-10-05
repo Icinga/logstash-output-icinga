@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name          = 'logstash-output-icinga'
-  s.version       = '1.0.0'
+  s.version       = '1.1.0'
   s.licenses      = ['Apache License (2.0)']
   s.summary       = 'A Logstash output that calls the Icinga API'
   s.homepage      = 'https://github.com/icinga/logstash-output-icinga'

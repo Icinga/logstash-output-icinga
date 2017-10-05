@@ -1,3 +1,6 @@
+## 1.1.0
+  - Create non-existent objects on demand 
+
 ## 1.0.0
   - Use multiple hosts in 'host' parameter
   - Rspec tests

@@ -1,9 +1,9 @@
 [[plugins-outputs-icinga]]
 === icinga
 
-* Version: 1.0.0
-* Released on: May 10, 2017
-* https://github.com/Icinga/logstash-output-icinga/blob/master/CHANGELOG.md#100[Changelog]
+* Version: 1.1.0
+* Released on: October 5, 2017
+* https://github.com/Icinga/logstash-output-icinga/blob/master/CHANGELOG.md#110[Changelog]
 
 
 ==== Installation
@@ -128,7 +128,7 @@ Available configuration options:
 &nbsp;
 
 [[plugins-outputs-icinga-action]]
-===== `action` 
+===== `action`
 
   * This is a required setting.
   * Value can be any of: `process-check-result`, `send-custom-notification`, `add-comment`, `remove-comment`, `schedule-downtime`, `remove-downtime`
@@ -147,7 +147,7 @@ All actions must target an `icinga_host` or an `icinga_service`.
 |=======================================================================
 
 [[plugins-outputs-icinga-action_config]]
-===== `action_config` 
+===== `action_config`
 
   * This is a required setting.
   * Value type is <<hash,hash>>
@@ -225,7 +225,7 @@ Detailed information about each action are listed in the
 https://docs.icinga.com/icinga2/latest/doc/module/icinga2/chapter/icinga2-api#icinga2-api-actions[Icinga Docs]
 
 [[plugins-outputs-icinga-codec]]
-===== `codec` 
+===== `codec`
 
   * Value type is <<codec,codec>>
   * Default value is `"plain"`
@@ -233,7 +233,7 @@ https://docs.icinga.com/icinga2/latest/doc/module/icinga2/chapter/icinga2-api#ic
 The codec used for output data. Output codecs are a convenient method for encoding your data before it leaves the output, without needing a separate filter in your Logstash pipeline.
 
 [[plugins-outputs-icinga-create_object]]
-===== `create_object` 
+===== `create_object`
 
   * Value type is <<boolean,boolean>>
   * Default value is `false`
@@ -244,7 +244,7 @@ automatically how to handle the host based on the desired action for the service
 can use the 'icinga' output multiple times in a row, where you first create the host and then the service.
 
 [[plugins-outputs-icinga-enable_metric]]
-===== `enable_metric` 
+===== `enable_metric`
 
   * Value type is <<boolean,boolean>>
   * Default value is `true`
@@ -254,7 +254,7 @@ by default we record all the metrics we can, but you can disable metrics collect
 for a specific plugin.
 
 [[plugins-outputs-icinga-host]]
-===== `host` 
+===== `host`
 
   * Value type is <<array,array>>
   * Default value is `["127.0.0.1"]`
@@ -271,7 +271,7 @@ For example:
     ["127.0.0.1:5665", "127.0.0.2"]
 
 [[plugins-outputs-icinga-icinga_host]]
-===== `icinga_host` 
+===== `icinga_host`
 
   * This is a required setting.
   * Value type is <<string,string>>
@@ -286,7 +286,7 @@ The Icinga `Host` object. This field may include existing fields.
     }
 
 [[plugins-outputs-icinga-icinga_service]]
-===== `icinga_service` 
+===== `icinga_service`
 
   * Value type is <<string,string>>
   * There is no default value for this setting.
@@ -301,14 +301,14 @@ The Icinga `Service` object. This field may include existing fields.
     }
 
 [[plugins-outputs-icinga-id]]
-===== `id` 
+===== `id`
 
   * Value type is <<string,string>>
   * There is no default value for this setting.
 
-Add a unique `ID` to the plugin configuration. If no ID is specified, Logstash will generate one. 
-It is strongly recommended to set this ID in your configuration. This is particularly useful 
-when you have two or more plugins of the same type, for example, if you have 2 grok filters. 
+Add a unique `ID` to the plugin configuration. If no ID is specified, Logstash will generate one.
+It is strongly recommended to set this ID in your configuration. This is particularly useful
+when you have two or more plugins of the same type, for example, if you have 2 grok filters.
 Adding a named ID in this case will help in monitoring Logstash when using the monitoring APIs.
 
 [source,ruby]
@@ -322,7 +322,7 @@ output {
 
 
 [[plugins-outputs-icinga-object_attrs]]
-===== `object_attrs` 
+===== `object_attrs`
 
   * Value type is <<hash,hash>>
   * Default value is `{"vars.created_by"=>"logstash"}`
@@ -338,7 +338,7 @@ Example:
  }
 
 [[plugins-outputs-icinga-object_templates]]
-===== `object_templates` 
+===== `object_templates`
 
   * Value type is <<array,array>>
   * Default value is `["logstash-service"]`
@@ -366,7 +366,7 @@ Example for an icinga service template:
  }
 
 [[plugins-outputs-icinga-password]]
-===== `password` 
+===== `password`
 
   * This is a required setting.
   * Value type is <<password,password>>
@@ -375,7 +375,7 @@ Example for an icinga service template:
 Password of the Icinga API user
 
 [[plugins-outputs-icinga-port]]
-===== `port` 
+===== `port`
 
   * Value type is <<number,number>>
   * Default value is `5665`
@@ -383,7 +383,7 @@ Password of the Icinga API user
 Global port configuration. Can be overriten on any hostname.
 
 [[plugins-outputs-icinga-ssl_verify]]
-===== `ssl_verify` 
+===== `ssl_verify`
 
   * Value type is <<boolean,boolean>>
   * Default value is `true`
@@ -392,7 +392,7 @@ Connecting to the Icinga API is only available through SSL encryption. Set this 
 verification.
 
 [[plugins-outputs-icinga-user]]
-===== `user` 
+===== `user`
 
   * This is a required setting.
   * Value type is <<string,string>>
@@ -403,7 +403,7 @@ this user has sufficient permissions to run the actions you configure. Learn abo
 https://docs.icinga.com/icinga2/latest/doc/module/icinga2/chapter/object-types#objecttype-apiuser[Icinga documentation about ApiUser].
 
 [[plugins-outputs-icinga-workers]]
-===== `workers` 
+===== `workers`
 
   * Value type is <<string,string>>
   * Default value is `1`
