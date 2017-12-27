@@ -294,6 +294,8 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
       icinga_host = event.sprintf(@icinga_host)
       icinga_service = event.sprintf(@icinga_service)
 
+      @uri.path = "/v1/actions/#{@action}"
+
       # Depending on the action we take, set either a filter in the request body or set a host and/or service in the
       # url parameters.
       case @action
@@ -307,9 +309,9 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
           end
         else
           if @icinga_service
-            @uri.query = "service=" + URI.encode("#{icinga_host}!#{icinga_service}")
+            @uri.query = URI.encode_www_form({:service => "#{icinga_host}!#{icinga_service}"})
           else
-            @uri.query = "host=" + URI.encode(icinga_host)
+            @uri.query = URI.encode_www_form({:host => icinga_host})
           end
 
           @action_config.each do |key, value|
@@ -403,7 +405,7 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
       @current_port = @port
     end
 
-    @uri = URI.parse("https://#{@current_host}:#{@current_port}/v1/actions/#{@action}")
+    @uri = URI.parse("https://#{@current_host}:#{@current_port}")
 
     http = Net::HTTP.new(@uri.host, @uri.port)
     http.use_ssl = true
@@ -425,18 +427,20 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
     end
 
     if @icinga_service
-      request_uri = '/v1/objects/services/' + URI.encode("#{icinga_host}!#{icinga_service}")
+      @uri.path = '/v1/objects/services/' + URI.encode("#{icinga_host}!#{icinga_service}")
     else
-      request_uri = '/v1/objects/hosts/' + URI.encode(icinga_host)
+      @uri.path = '/v1/objects/hosts/' + URI.encode(icinga_host)
     end
 
-    request = Net::HTTP::Put.new(request_uri)
+    @uri.query = URI.encode_www_form({:ignore_on_error => 1})
+
+    request = Net::HTTP::Put.new(@uri.request_uri)
     request.initialize_http_header({'Accept' => 'application/json'})
     request.basic_auth(@user, @password.value)
     request.body = LogStash::Json.dump(object_config)
 
     @logger.info( "Creating Object",
-                   :request_uri => request_uri,
+                   :request_uri => @uri.request_uri,
                    :request_body => request.body,
                    :icinga_host => icinga_host, :icinga_service => icinga_service )
 
