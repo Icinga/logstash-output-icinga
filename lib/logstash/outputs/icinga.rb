@@ -359,25 +359,29 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
         retry
       end
 
-    rescue StandardError => e
-      @logger.warn( "Request failed",
+    rescue Errno::EINVAL, Errno::ECONNRESET, EOFError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError,
+        Net::ProtocolError, OpenSSL::SSL::SSLError, StandardError => e
+      @logger.warn("Request failed",
                      :host => @uri.host, :port => @uri.port,
                      :path => request.path, :body => request.body,
-                     :response_code => response.code, :response_body => response.body,
                      :error => e )
 
-      # If a object does not exist, create it and retry action
-      if response.code == '404' and @create_object == true
-        object = create_object(event)
+      if response
+        @logger.warn("Response: ", :response_code => response.code, :response_body => response.body)
 
-        if object.code == '200'
-          @logger.info("Retrying action on freshly created object", :action => @action)
-          retry
-        else
-          @logger.warn("Failed to create object", :response_code => object.code, :response_body => object.body)
-          next
+        if response.code == '404' && @create_object == true
+          object = create_object(event)
+
+          if object.code == '200'
+            @logger.info("Retrying action on freshly created object", :action => @action)
+            retry
+          else
+            @logger.warn("Failed to create object", :response_code => object.code, :response_body => object.body)
+            next
+          end
         end
       end
+
 
     end
   end # def event
