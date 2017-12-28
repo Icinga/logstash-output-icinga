@@ -1,5 +1,5 @@
 # encoding: utf-8
-require 'logstash/devutils/rspec/spec_helper'
+require_relative '../spec_helper'
 require 'logstash/outputs/icinga'
 require 'logstash/event'
 require 'webmock/rspec'
@@ -165,6 +165,7 @@ describe LogStash::Outputs::Icinga do
           to_raise(StandardError)
 
       expect(logger).to receive(:warn).with("Request failed", instance_of(Hash))
+      expect(logger).to receive(:warn).with("Response: ", instance_of(Hash))
 
       stub_request(:put, "https://#{host[0]}/v1/objects/services/#{icinga_host}!#{icinga_service}").
           with(:body => '{"templates":["logstash-service"],"attrs":{"vars.created_by":"logstash"}}',
