@@ -97,6 +97,9 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
   # verification.
   config :ssl_verify, :validate => :boolean, :default => true
 
+  # Sets absolute path of a CA certification file in PEM format. The file can contain several CA certificates.
+  config :ca_file, :validate => :path
+
   # All actions must target an `icinga_host` or an `icinga_service`.
   # [cols="<,<",]
   # |=======================================================================
@@ -414,6 +417,7 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
     http = Net::HTTP.new(@uri.host, @uri.port)
     http.use_ssl = true
     http.verify_mode = @ssl_verify_mode
+    http.ca_file = @ca_file if @ca_file
     http.open_timeout = 2
     http.read_timeout = 5
     http
