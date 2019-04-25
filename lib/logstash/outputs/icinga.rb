@@ -308,7 +308,7 @@ class LogStash::Outputs::Icinga < LogStash::Outputs::Base
           if @icinga_service
             request_body['filter'] = "host.name == \"#{icinga_host}\" && service.name == \"#{icinga_service}\" && #{action_type}.author == \"#{@action_config['author']}\""
           else
-            request_body['filter'] = "host.name == \"#{icinga_host}\" && #{action_type}.author == \"#{@action_config['author']}\""
+            request_body['filter'] = "host.name == \"#{icinga_host}\" && !service && #{action_type}.author == \"#{@action_config['author']}\""
           end
         else
           if @icinga_service
